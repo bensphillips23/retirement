@@ -1,6 +1,6 @@
 # Early Retirement Monte Carlo (Two-Person)
 
-Static, in-browser Monte Carlo retirement simulator (stocks/bonds correlated returns), multi-scenario, GitHub Pages deploy.
+Static,  in-browser Monte Carlo retirement simulator (stocks/bonds correlated returns), multi-scenario, GitHub Pages deploy.
 
 ## Quick start
 ```bash
