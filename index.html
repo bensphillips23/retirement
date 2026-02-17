@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Early Retirement Monte Carlo (Simple)</title>
+
+  <!-- Chart.js via CDN (no build step) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{ --border:#e6e6e6; --muted:#666; --bg:#fff; --card:#fff; --shadow: 0 1px 0 rgba(0,0,0,.03); }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:#111; }
+    .container{ max-width:1200px; margin:0 auto; padding:16px; }
+    .header{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:12px; }
+    .title{ font-size:18px; font-weight:800; margin:0; }
+    .subtitle{ margin:0; color:var(--muted); font-size:12px; }
+    .grid{ display:grid; grid-template-columns:420px 1fr; gap:16px; }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px; box-shadow:var(--shadow); }
+    .row{ display:grid; grid-template-columns:1fr 170px; gap:10px; align-items:center; margin-bottom:10px; }
+    label{ font-size:13px; color:#333; }
+    input[type="number"], input[type="text"], select{ width:100%; padding:8px 10px; border-radius:10px; border:1px solid #ddd; font-size:14px; background:#fff; }
+    input[type="range"]{ width:100%; }
+    .small{ font-size:12px; color:var(--muted); }
+    .btnRow{ display:flex; gap:8px; flex-wrap:wrap; }
+    button{ padding:9px 12px; border-radius:10px; border:1px solid #ddd; background:#fff; cursor:pointer; font-size:14px; }
+    button.primary{ background:#111; border-color:#111; color:#fff; }
+    button:disabled{ opacity:.6; cursor:not-allowed; }
+    .tabs{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .tab{ padding:7px 10px; border-radius:999px; border:1px solid #ddd; background:#fff; font-size:13px; cursor:pointer; }
+    .tab.active{ background:#f5f5f5; border-color:#bbb; }
+    .statbar{ display:flex; gap:18px; flex-wrap:wrap; align-items:flex-end; }
+    .stat .k{ font-size:12px; color:var(--muted); margin-bottom:2px; }
+    .stat .vBig{ font-size:26px; font-weight:800; }
+    .stat .v{ font-size:16px; font-weight:700; }
+    canvas{ max-width:100%; }
+    .hr{ border:none; border-top:1px solid #eee; margin:12px 0; }
+    @media (max-width:980px){ .grid{ grid-template-columns:1fr; } }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <p class="title">Early Retirement Monte Carlo (Simple)</p>
+        <p class="subtitle">Two-person household • Multiple scenarios • Upload to GitHub Pages and it just runs</p>
+      </div>
+      <div class="btnRow">
+        <button class="primary" id="runBtn">Run Simulation</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div style="display:grid; gap:16px;">
+        <div class="card">
+          <div class="row">
+            <label>Scenario</label>
+            <select id="scenarioSelect"></select>
+          </div>
+          <div class="btnRow">
+            <button id="newBtn">New</button>
+            <button id="dupBtn">Duplicate</button>
+            <button id="delBtn">Delete</button>
+          </div>
+          <div class="small" style="margin-top:8px;">Scenarios save in your browser (LocalStorage).</div>
+        </div>
+
+        <div class="card">
+          <div class="tabs">
+            <button class="tab active" data-tab="household">Household</button>
+            <button class="tab" data-tab="you">You</button>
+            <button class="tab" data-tab="wife">Wife</button>
+            <button class="tab" data-tab="assumptions">Assumptions</button>
+          </div>
+
+          <div class="panel" id="panel-household">
+            <div class="row"><label>Scenario name</label><input type="text" id="scenarioName"/></div>
+            <div class="row"><label>Current portfolio ($)</label><input type="number" id="portfolio" min="0" step="1000"/></div>
+            <div class="row"><label>Annual spending (today’s $)</label><input type="number" id="spending" min="0" step="500"/></div>
+            <div class="row"><label>Annual contribution while anyone working</label><input type="number" id="contrib" min="0" step="500"/></div>
+
+            <div style="margin-top:10px;">
+              <div class="small" id="allocLabel">Stock allocation</div>
+              <input type="range" id="stockWeight" min="0" max="100" step="1"/>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="small" style="margin-bottom:6px;">Quick sliders</div>
+            <div class="row"><label>Spending slider</label><input type="range" id="spendingSlider" min="20000" max="200000" step="1000"/></div>
+            <div class="row"><label>Contribution slider</label><input type="range" id="contribSlider" min="0" max="120000" step="1000"/></div>
+          </div>
+
+          <div class="panel" id="panel-you" style="display:none;">
+            <div class="row"><label>Name</label><input type="text" id="nameA"/></div>
+            <div class="row"><label>Current age</label><input type="number" id="ageA" min="0" step="1"/></div>
+            <div class="row"><label>Retirement age</label><input type="number" id="retireA" min="0" step="1"/></div>
+            <div class="row"><label>Benefit start age (SS/pension)</label><input type="number" id="benefitAgeA" min="0" step="1"/></div>
+            <div class="row"><label>Annual benefit (today’s $)</label><input type="number" id="benefitA" min="0" step="500"/></div>
+            <div style="margin-top:10px;"><div class="small">Retirement age slider</div><input type="range" id="retireASlider" min="35" max="80" step="1"/></div>
+          </div>
+
+          <div class="panel" id="panel-wife" style="display:none;">
+            <div class="row"><label>Name</label><input type="text" id="nameB"/></div>
+            <div class="row"><label>Current age</label><input type="number" id="ageB" min="0" step="1"/></div>
+            <div class="row"><label>Retirement age</label><input type="number" id="retireB" min="0" step="1"/></div>
+            <div class="row"><label>Benefit start age (SS/pension)</label><input type="number" id="benefitAgeB" min="0" step="1"/></div>
+            <div class="row"><label>Annual benefit (today’s $)</label><input type="number" id="benefitB" min="0" step="500"/></div>
+            <div style="margin-top:10px;"><div class="small">Retirement age slider</div><input type="range" id="retireBSlider" min="35" max="80" step="1"/></div>
+          </div>
+
+          <div class="panel" id="panel-assumptions" style="display:none;">
+            <div class="row"><label>Horizon (years)</label><input type="number" id="years" min="1" step="1"/></div>
+            <div class="row"><label>Runs</label><input type="number" id="runs" min="100" step="100"/></div>
+            <div class="row"><label>Seed</label><input type="number" id="seed" step="1"/></div>
+
+            <div class="hr"></div>
+
+            <div class="row"><label>Stock real return (mean)</label><input type="number" id="stockMean" step="0.001"/></div>
+            <div class="row"><label>Stock volatility</label><input type="number" id="stockVol" step="0.001"/></div>
+            <div class="row"><label>Bond real return (mean)</label><input type="number" id="bondMean" step="0.001"/></div>
+            <div class="row"><label>Bond volatility</label><input type="number" id="bondVol" step="0.001"/></div>
+            <div class="row"><label>Stock/Bond correlation</label><input type="number" id="corr" step="0.01"/></div>
+
+            <div class="small" style="margin-top:8px;">Assumptions are <b>real</b> (inflation-adjusted). Spending & benefits are in today’s dollars.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid; gap:16px;">
+        <div class="card">
+          <div class="statbar">
+            <div class="stat">
+              <div class="k">Success rate</div>
+              <div class="vBig" id="successRate">—</div>
+            </div>
+            <div class="stat">
+              <div class="k">Ending balance p10 / p50 / p90</div>
+              <div class="v" id="endingP">—</div>
+            </div>
+            <div class="stat">
+              <div class="k">Notes</div>
+              <div class="small">If you see 0% success, try lowering spending or increasing retirement age.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800; margin-bottom:8px;">Portfolio paths (p10 / p50 / p90)</div>
+          <canvas id="pathChart" height="130"></canvas>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800; margin-bottom:8px;">Ending balance distribution</div>
+          <canvas id="histChart" height="130"></canvas>
+          <div class="small" style="margin-top:8px;">Histogram bins are evenly spaced from $0 to max ending balance.</div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800; margin-bottom:8px;">What this model is doing</div>
+          <div class="small">Each year: add contributions (while anyone working), subtract household spending, add benefits if started, then apply a random real return based on your stock/bond mix (with correlation).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const STORAGE_KEY = "ret_simple_scenarios_v1";
+const ACTIVE_KEY  = "ret_simple_active_id_v1";
+
+function defaultScenario(){
+  return {
+    id: crypto.randomUUID(),
+    name: "Base case",
+    household: {
+      portfolio: 800000,
+      spending: 65000,
+      contrib: 24000,
+      stockWeight: 70,
+      years: 45,
+      runs: 5000,
+      seed: 42,
+      stockMean: 0.055,
+      stockVol: 0.17,
+      bondMean: 0.02,
+      bondVol: 0.06,
+      corr: 0.15
+    },
+    you:  { name: "You",  age: 40, retire: 55, benefitAge: 67, benefit: 28000 },
+    wife: { name: "Wife", age: 38, retire: 55, benefitAge: 67, benefit: 22000 }
+  };
+}
+function loadScenarios(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return [defaultScenario()];
+    const parsed = JSON.parse(raw);
+    if(!Array.isArray(parsed) || parsed.length === 0) return [defaultScenario()];
+    return parsed;
+  }catch{
+    return [defaultScenario()];
+  }
+}
+function saveScenarios(list){ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }
+function loadActiveId(list){
+  const id = localStorage.getItem(ACTIVE_KEY);
+  if(id && list.some(s => s.id === id)) return id;
+  return list[0].id;
+}
+function saveActiveId(id){ localStorage.setItem(ACTIVE_KEY, id); }
+
+function mulberry32(seed){
+  let t = seed >>> 0;
+  return function(){
+    t += 0x6D2B79F5;
+    let x = Math.imul(t ^ (t >>> 15), 1 | t);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randn(rng){
+  let u = 0, v = 0;
+  while(u === 0) u = rng();
+  while(v === 0) v = rng();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+
+function quantile(sortedAsc, q){
+  if(sortedAsc.length === 0) return 0;
+  const pos = (sortedAsc.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const next = sortedAsc[Math.min(base + 1, sortedAsc.length - 1)];
+  return sortedAsc[base] + rest * (next - sortedAsc[base]);
+}
+function corrNormals(z1, z2, corr){
+  const c = clamp(corr, -1, 1);
+  const s = Math.sqrt(Math.max(0, 1 - c*c));
+  return c*z1 + s*z2;
+}
+
+function runSimulation(sc){
+  const H = sc.household;
+  const years = Math.max(1, Math.floor(H.years));
+  const runs  = Math.max(100, Math.floor(H.runs));
+  const rng = mulberry32(Math.floor(H.seed));
+
+  const stockW = clamp(H.stockWeight/100, 0, 1);
+  const bondW  = 1 - stockW;
+
+  const pathsByYear = Array.from({length: years+1}, () => []);
+  const endingBalances = [];
+  const failureYearCounts = Array.from({length: years}, () => 0);
+
+  let successCount = 0;
+
+  for(let i=0;i<runs;i++){
+    let P = H.portfolio;
+    let failed = false;
+    pathsByYear[0].push(P);
+
+    for(let y=1;y<=years;y++){
+      const ageA = sc.you.age + (y-1);
+      const ageB = sc.wife.age + (y-1);
+
+      const anyoneWorking = (ageA < sc.you.retire) || (ageB < sc.wife.retire);
+
+      const benefitA = ageA >= sc.you.benefitAge ? sc.you.benefit : 0;
+      const benefitB = ageB >= sc.wife.benefitAge ? sc.wife.benefit : 0;
+      const income = benefitA + benefitB;
+
+      const contrib = anyoneWorking ? H.contrib : 0;
+
+      P = P + contrib - H.spending + income;
+
+      if(P <= 0){
+        failed = true;
+        failureYearCounts[y-1] += 1;
+        P = 0;
+        pathsByYear[y].push(P);
+        for(let yy=y+1; yy<=years; yy++) pathsByYear[yy].push(0);
+        break;
+      }
+
+      const z1 = randn(rng);
+      const z2 = randn(rng);
+      const zb = corrNormals(z1, z2, H.corr);
+
+      const rStock = H.stockMean + H.stockVol * z1;
+      const rBond  = H.bondMean  + H.bondVol  * zb;
+      const r = stockW*rStock + bondW*rBond;
+
+      P = P * (1 + r);
+
+      if(P <= 0){
+        failed = true;
+        failureYearCounts[y-1] += 1;
+        P = 0;
+        pathsByYear[y].push(P);
+        for(let yy=y+1; yy<=years; yy++) pathsByYear[yy].push(0);
+        break;
+      }
+
+      pathsByYear[y].push(P);
+    }
+
+    endingBalances.push(P);
+    if(!failed) successCount += 1;
+  }
+
+  const pathPercentiles = [];
+  for(let y=0;y<=years;y++){
+    const arr = pathsByYear[y].slice().sort((a,b)=>a-b);
+    pathPercentiles.push({ year:y, p10:quantile(arr,0.10), p50:quantile(arr,0.50), p90:quantile(arr,0.90) });
+  }
+
+  return { successRate: successCount/runs, endingBalances, failureYearCounts, pathPercentiles };
+}
+
+/** UI */
+let scenarios = loadScenarios();
+let activeId = loadActiveId(scenarios);
+let active = scenarios.find(s => s.id === activeId) || scenarios[0];
+
+const el = (id)=>document.getElementById(id);
+const scenarioSelect = el("scenarioSelect");
+const runBtn = el("runBtn");
+const newBtn = el("newBtn");
+const dupBtn = el("dupBtn");
+const delBtn = el("delBtn");
+
+const inputs = {
+  scenarioName: el("scenarioName"),
+  portfolio: el("portfolio"),
+  spending: el("spending"),
+  contrib: el("contrib"),
+  stockWeight: el("stockWeight"),
+  allocLabel: el("allocLabel"),
+  spendingSlider: el("spendingSlider"),
+  contribSlider: el("contribSlider"),
+
+  nameA: el("nameA"), ageA: el("ageA"), retireA: el("retireA"), benefitAgeA: el("benefitAgeA"), benefitA: el("benefitA"), retireASlider: el("retireASlider"),
+  nameB: el("nameB"), ageB: el("ageB"), retireB: el("retireB"), benefitAgeB: el("benefitAgeB"), benefitB: el("benefitB"), retireBSlider: el("retireBSlider"),
+
+  years: el("years"), runs: el("runs"), seed: el("seed"),
+  stockMean: el("stockMean"), stockVol: el("stockVol"), bondMean: el("bondMean"), bondVol: el("bondVol"), corr: el("corr"),
+
+  successRate: el("successRate"),
+  endingP: el("endingP")
+};
+
+function fmtMoney(x){ return "$" + Math.round(x).toLocaleString(); }
+function fmtPct(x){ return (x*100).toFixed(1) + "%"; }
+
+function renderScenarioSelect(){
+  scenarioSelect.innerHTML = "";
+  for(const s of scenarios){
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.name;
+    scenarioSelect.appendChild(opt);
+  }
+  scenarioSelect.value = active.id;
+  delBtn.disabled = scenarios.length <= 1;
+}
+function syncAllocLabel(){
+  const sw = Number(inputs.stockWeight.value);
+  inputs.allocLabel.textContent = `Stock allocation (${sw}% stocks / ${100 - sw}% bonds)`;
+}
+function loadScenarioToForm(sc){
+  inputs.scenarioName.value = sc.name;
+  inputs.portfolio.value = sc.household.portfolio;
+  inputs.spending.value  = sc.household.spending;
+  inputs.contrib.value   = sc.household.contrib;
+
+  inputs.stockWeight.value = sc.household.stockWeight;
+  inputs.spendingSlider.value = sc.household.spending;
+  inputs.contribSlider.value  = sc.household.contrib;
+
+  inputs.nameA.value = sc.you.name;
+  inputs.ageA.value = sc.you.age;
+  inputs.retireA.value = sc.you.retire;
+  inputs.benefitAgeA.value = sc.you.benefitAge;
+  inputs.benefitA.value = sc.you.benefit;
+  inputs.retireASlider.value = sc.you.retire;
+
+  inputs.nameB.value = sc.wife.name;
+  inputs.ageB.value = sc.wife.age;
+  inputs.retireB.value = sc.wife.retire;
+  inputs.benefitAgeB.value = sc.wife.benefitAge;
+  inputs.benefitB.value = sc.wife.benefit;
+  inputs.retireBSlider.value = sc.wife.retire;
+
+  inputs.years.value = sc.household.years;
+  inputs.runs.value  = sc.household.runs;
+  inputs.seed.value  = sc.household.seed;
+
+  inputs.stockMean.value = sc.household.stockMean;
+  inputs.stockVol.value  = sc.household.stockVol;
+  inputs.bondMean.value  = sc.household.bondMean;
+  inputs.bondVol.value   = sc.household.bondVol;
+  inputs.corr.value      = sc.household.corr;
+
+  syncAllocLabel();
+}
+function readFormToScenario(sc){
+  sc.name = inputs.scenarioName.value.trim() || "Scenario";
+
+  sc.household.portfolio = Number(inputs.portfolio.value) || 0;
+  sc.household.spending  = Number(inputs.spending.value) || 0;
+  sc.household.contrib   = Number(inputs.contrib.value) || 0;
+  sc.household.stockWeight = Number(inputs.stockWeight.value) || 0;
+
+  sc.you.name = inputs.nameA.value || "You";
+  sc.you.age  = Number(inputs.ageA.value) || 0;
+  sc.you.retire = Number(inputs.retireA.value) || 0;
+  sc.you.benefitAge = Number(inputs.benefitAgeA.value) || 0;
+  sc.you.benefit = Number(inputs.benefitA.value) || 0;
+
+  sc.wife.name = inputs.nameB.value || "Wife";
+  sc.wife.age  = Number(inputs.ageB.value) || 0;
+  sc.wife.retire = Number(inputs.retireB.value) || 0;
+  sc.wife.benefitAge = Number(inputs.benefitAgeB.value) || 0;
+  sc.wife.benefit = Number(inputs.benefitB.value) || 0;
+
+  sc.household.years = Math.max(1, Math.floor(Number(inputs.years.value) || 1));
+  sc.household.runs  = Math.max(100, Math.floor(Number(inputs.runs.value) || 100));
+  sc.household.seed  = Math.floor(Number(inputs.seed.value) || 0);
+
+  sc.household.stockMean = Number(inputs.stockMean.value) || 0;
+  sc.household.stockVol  = Number(inputs.stockVol.value) || 0;
+  sc.household.bondMean  = Number(inputs.bondMean.value) || 0;
+  sc.household.bondVol   = Number(inputs.bondVol.value) || 0;
+  sc.household.corr      = Number(inputs.corr.value) || 0;
+}
+function persist(){
+  saveScenarios(scenarios);
+  saveActiveId(active.id);
+}
+function setActive(id){
+  activeId = id;
+  active = scenarios.find(s => s.id === activeId) || scenarios[0];
+  renderScenarioSelect();
+  loadScenarioToForm(active);
+  persist();
+}
+
+scenarioSelect.addEventListener("change", ()=> setActive(scenarioSelect.value));
+newBtn.addEventListener("click", ()=>{
+  const s = defaultScenario();
+  s.name = `Scenario ${scenarios.length + 1}`;
+  scenarios.unshift(s);
+  setActive(s.id);
+});
+dupBtn.addEventListener("click", ()=>{
+  const copy = JSON.parse(JSON.stringify(active));
+  copy.id = crypto.randomUUID();
+  copy.name = `${active.name} (copy)`;
+  scenarios.unshift(copy);
+  setActive(copy.id);
+});
+delBtn.addEventListener("click", ()=>{
+  if(scenarios.length <= 1) return;
+  const idx = scenarios.findIndex(s => s.id === active.id);
+  scenarios = scenarios.filter(s => s.id !== active.id);
+  const next = scenarios[Math.max(0, idx-1)] || scenarios[0];
+  setActive(next.id);
+});
+
+function bindInput(inputEl, onChange){
+  inputEl.addEventListener("input", ()=>{
+    onChange();
+    readFormToScenario(active);
+    if(inputEl === inputs.scenarioName){
+      renderScenarioSelect();
+      scenarioSelect.value = active.id;
+    }
+    persist();
+  });
+}
+bindInput(inputs.scenarioName, ()=>{});
+bindInput(inputs.portfolio, ()=>{});
+bindInput(inputs.spending, ()=>{ inputs.spendingSlider.value = inputs.spending.value; });
+bindInput(inputs.contrib, ()=>{ inputs.contribSlider.value = inputs.contrib.value; });
+bindInput(inputs.stockWeight, ()=>{ syncAllocLabel(); });
+bindInput(inputs.spendingSlider, ()=>{ inputs.spending.value = inputs.spendingSlider.value; });
+bindInput(inputs.contribSlider, ()=>{ inputs.contrib.value = inputs.contribSlider.value; });
+
+bindInput(inputs.nameA, ()=>{});
+bindInput(inputs.ageA, ()=>{});
+bindInput(inputs.retireA, ()=>{ inputs.retireASlider.value = inputs.retireA.value; });
+bindInput(inputs.benefitAgeA, ()=>{});
+bindInput(inputs.benefitA, ()=>{});
+bindInput(inputs.retireASlider, ()=>{ inputs.retireA.value = inputs.retireASlider.value; });
+
+bindInput(inputs.nameB, ()=>{});
+bindInput(inputs.ageB, ()=>{});
+bindInput(inputs.retireB, ()=>{ inputs.retireBSlider.value = inputs.retireB.value; });
+bindInput(inputs.benefitAgeB, ()=>{});
+bindInput(inputs.benefitB, ()=>{});
+bindInput(inputs.retireBSlider, ()=>{ inputs.retireB.value = inputs.retireBSlider.value; });
+
+bindInput(inputs.years, ()=>{});
+bindInput(inputs.runs, ()=>{});
+bindInput(inputs.seed, ()=>{});
+bindInput(inputs.stockMean, ()=>{});
+bindInput(inputs.stockVol, ()=>{});
+bindInput(inputs.bondMean, ()=>{});
+bindInput(inputs.bondVol, ()=>{});
+bindInput(inputs.corr, ()=>{});
+
+/** Tabs */
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.getAttribute("data-tab");
+    document.querySelectorAll(".panel").forEach(p=>p.style.display="none");
+    document.getElementById("panel-"+tab).style.display="block";
+  });
+});
+
+/** Charts */
+let pathChart = null;
+let histChart = null;
+function buildCharts(){
+  pathChart = new Chart(document.getElementById("pathChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label:"p10", data:[], tension:0.2, pointRadius:0 },
+      { label:"p50", data:[], tension:0.2, pointRadius:0, borderWidth:3 },
+      { label:"p90", data:[], tension:0.2, pointRadius:0 }
+    ]},
+    options: {
+      responsive:true,
+      plugins:{ tooltip:{ callbacks:{ label:(ctx)=> `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` } } },
+      scales:{ y:{ ticks:{ callback:(v)=> "$"+Number(v).toLocaleString() } } }
+    }
+  });
+
+  histChart = new Chart(document.getElementById("histChart"), {
+    type:"bar",
+    data:{ labels:[], datasets:[{ label:"Runs", data:[] }] },
+    options:{ responsive:true }
+  });
+}
+function updateCharts(results){
+  inputs.successRate.textContent = fmtPct(results.successRate);
+
+  const sorted = results.endingBalances.slice().sort((a,b)=>a-b);
+  const p10 = quantile(sorted, 0.10), p50 = quantile(sorted, 0.50), p90 = quantile(sorted, 0.90);
+  inputs.endingP.textContent = `${fmtMoney(p10)} / ${fmtMoney(p50)} / ${fmtMoney(p90)}`;
+
+  const labels = results.pathPercentiles.map(p=>p.year);
+  pathChart.data.labels = labels;
+  pathChart.data.datasets[0].data = results.pathPercentiles.map(p=>p.p10);
+  pathChart.data.datasets[1].data = results.pathPercentiles.map(p=>p.p50);
+  pathChart.data.datasets[2].data = results.pathPercentiles.map(p=>p.p90);
+  pathChart.update();
+
+  const bins = 18;
+  const maxVal = sorted[sorted.length - 1] || 0;
+  const binSize = maxVal <= 0 ? 1 : maxVal / bins;
+  const counts = Array.from({length: bins}, ()=>0);
+  for(const v of results.endingBalances){
+    const idx = binSize <= 0 ? 0 : Math.min(bins-1, Math.floor(v/binSize));
+    counts[idx] += 1;
+  }
+  const labels2 = Array.from({length: bins}, (_,i)=> {
+    const a = i*binSize, b=(i+1)*binSize;
+    return `${Math.round(a/1000)}k–${Math.round(b/1000)}k`;
+  });
+  histChart.data.labels = labels2;
+  histChart.data.datasets[0].data = counts;
+  histChart.update();
+}
+
+runBtn.addEventListener("click", ()=>{
+  runBtn.disabled = true;
+  runBtn.textContent = "Running…";
+  setTimeout(()=>{
+    try{
+      readFormToScenario(active);
+      persist();
+      const results = runSimulation(active);
+      updateCharts(results);
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = "Run Simulation";
+    }
+  }, 50);
+});
+
+/** Init */
+renderScenarioSelect();
+loadScenarioToForm(active);
+persist();
+syncAllocLabel();
+buildCharts();
+</script>
+</body>
+</html>
